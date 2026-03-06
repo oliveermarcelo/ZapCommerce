@@ -59,10 +59,8 @@ services:
       - PLATFORM_FEE_DEFAULT=5.0
       - TRIAL_DAYS=14
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      - postgres
+      - redis
     networks:
       - wapify
       - wapify-internal
