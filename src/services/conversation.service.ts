@@ -222,7 +222,7 @@ async function handlePaymentChoice(s: SessionData, wa: WA, text: string, rid: st
   if (pm === 'PIX') {
     s.state = 'AWAITING_PAYMENT'; await saveSession(s)
     const { generatePixForOrder } = await import('./payment.service'); const pix = await generatePixForOrder(order.id)
-    if (pix?.qrCodeBase64) await wa.sendImage(s.customerNumber, { imageBase64: pix.qrCodeBase64, caption: `💰 PIX\n\nValor: ${formatCurrency(order.total)}\n\nCopia e cola:\n${pix.copyPaste}\n\n⏰ 15 minutos` })
+    if (pix?.qrCodeBase64) await wa.sendImage(s.customerNumber, { imageBase64: pix.qrCodeBase64, caption: `💰 PIX\n\nValor: ${formatCurrency(order.total)}\n\nCopia e cola:\n${pix.qrCodeText}\n\n⏰ 15 minutos` })
   } else {
     await clearSession(s.tenantId, s.customerNumber)
     const t = await prisma.tenant.findUnique({ where: { id: s.tenantId }, include: { settings: true } })
