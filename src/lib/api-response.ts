@@ -30,10 +30,10 @@ export function apiNotFound(message = 'Recurso não encontrado') {
 }
 
 // Wrapper para tratar erros automaticamente nas API routes
-export function withErrorHandler(
-  handler: (req: Request, context?: any) => Promise<NextResponse>
+export function withErrorHandler<TReq extends Request = Request, TContext = any>(
+  handler: (req: TReq, context?: TContext) => Promise<NextResponse> | NextResponse
 ) {
-  return async (req: Request, context?: any) => {
+  return async (req: TReq, context?: TContext): Promise<NextResponse> => {
     try {
       return await handler(req, context)
     } catch (error: any) {
