@@ -44,7 +44,14 @@ export async function middleware(req: NextRequest) {
   }
 
   try {
-    await jwtVerify(token, JWT_SECRET)
+    const { payload } = await jwtVerify(token, JWT_SECRET)
+    const isSuperAdmin = payload.isSuperAdmin === true
+
+    // Rota de super admin
+    if (pathname.startsWith('/admin') && !isSuperAdmin) {
+      return NextResponse.redirect(new URL('/dashboard', req.url))
+    }
+
     return NextResponse.next()
   } catch {
     // Token inválido/expirado

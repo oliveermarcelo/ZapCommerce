@@ -20,11 +20,12 @@ import {
   Wifi,
   WifiOff,
   Menu,
-  X
+  X,
+  ShieldCheck
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
-const navItems = [
+const tenantNavItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/orders', label: 'Pedidos', icon: Columns3, badge: true },
   { href: '/catalog/products', label: 'Produtos', icon: ShoppingBag },
@@ -35,10 +36,18 @@ const navItems = [
   { href: '/settings', label: 'Configurações', icon: Settings },
 ]
 
+const superAdminNavItems = [
+  { href: '/admin', label: 'Super Admin', icon: ShieldCheck },
+]
+
 export function Sidebar() {
   const pathname = usePathname()
-  const { tenant, logout } = useAuthStore()
+  const { user, tenant, logout } = useAuthStore()
   const { sidebarOpen, sidebarCollapsed, toggleSidebar, toggleSidebarCollapse } = useUIStore()
+  const homeHref = user?.isSuperAdmin ? '/admin' : '/dashboard'
+  const navItems = user?.isSuperAdmin
+    ? [...superAdminNavItems, ...(tenant ? tenantNavItems : [])]
+    : tenantNavItems
 
   return (
     <>
@@ -59,7 +68,7 @@ export function Sidebar() {
         {/* Header */}
         <div className="flex h-16 items-center justify-between px-4 border-b border-slate-700/50">
           {!sidebarCollapsed && (
-            <Link href="/dashboard" className="flex items-center gap-2.5">
+            <Link href={homeHref} className="flex items-center gap-2.5">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-whatsapp">
                 <MessageCircle className="h-4.5 w-4.5 text-white" />
               </div>
@@ -84,18 +93,25 @@ export function Sidebar() {
           </button>
         </div>
 
-        {/* WhatsApp Status */}
-        <div className={cn(
-          "mx-3 mt-4 flex items-center gap-2 rounded-lg px-3 py-2 text-xs",
-          tenant?.whatsappConnected
-            ? "bg-emerald-500/10 text-emerald-400"
-            : "bg-red-500/10 text-red-400"
-        )}>
-          {tenant?.whatsappConnected
-            ? <><Wifi className="h-3.5 w-3.5 shrink-0" />{!sidebarCollapsed && "WhatsApp Conectado"}</>
-            : <><WifiOff className="h-3.5 w-3.5 shrink-0" />{!sidebarCollapsed && "WhatsApp Desconectado"}</>
-          }
-        </div>
+        {/* WhatsApp Status / Super Admin */}
+        {user?.isSuperAdmin && !tenant ? (
+          <div className="mx-3 mt-4 flex items-center gap-2 rounded-lg px-3 py-2 text-xs bg-blue-500/10 text-blue-300">
+            <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
+            {!sidebarCollapsed && "Modo Super Admin"}
+          </div>
+        ) : (
+          <div className={cn(
+            "mx-3 mt-4 flex items-center gap-2 rounded-lg px-3 py-2 text-xs",
+            tenant?.whatsappConnected
+              ? "bg-emerald-500/10 text-emerald-400"
+              : "bg-red-500/10 text-red-400"
+          )}>
+            {tenant?.whatsappConnected
+              ? <><Wifi className="h-3.5 w-3.5 shrink-0" />{!sidebarCollapsed && "WhatsApp Conectado"}</>
+              : <><WifiOff className="h-3.5 w-3.5 shrink-0" />{!sidebarCollapsed && "WhatsApp Desconectado"}</>
+            }
+          </div>
+        )}
 
         {/* Navigation */}
         <nav className="flex-1 space-y-1 px-3 mt-4 overflow-y-auto scrollbar-thin">
@@ -126,6 +142,12 @@ export function Sidebar() {
             <div className="mb-3 rounded-lg bg-slate-800/50 px-3 py-2">
               <p className="text-sm font-medium truncate">{tenant.name}</p>
               <p className="text-xs text-slate-400 truncate">{tenant.slug}</p>
+            </div>
+          )}
+          {!sidebarCollapsed && user?.isSuperAdmin && !tenant && (
+            <div className="mb-3 rounded-lg bg-slate-800/50 px-3 py-2">
+              <p className="text-sm font-medium truncate">{user.name}</p>
+              <p className="text-xs text-slate-400 truncate">Super Admin</p>
             </div>
           )}
           <button

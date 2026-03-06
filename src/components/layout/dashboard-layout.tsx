@@ -50,7 +50,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </div>
               <div className="hidden md:block">
                 <p className="text-sm font-medium">{user?.name}</p>
-                <p className="text-xs text-muted-foreground">{tenant?.name}</p>
+                <p className="text-xs text-muted-foreground">{tenant?.name || (user?.isSuperAdmin ? 'Super Admin' : '')}</p>
               </div>
             </div>
           </div>

@@ -39,7 +39,11 @@ export default function LoginPage() {
       }
 
       setAuth(data.data.user, data.data.tenant, data.data.token)
-      router.push('/dashboard')
+      if (data.data.user?.isSuperAdmin) {
+        router.push('/admin')
+      } else {
+        router.push('/dashboard')
+      }
     } catch (err) {
       setError('Erro de conexão. Tente novamente.')
     } finally {
