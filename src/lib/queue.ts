@@ -1,9 +1,16 @@
 import { Queue, Worker } from 'bullmq'
-import Redis from 'ioredis'
+import type { ConnectionOptions } from 'bullmq'
 
-const connection = new Redis(process.env.REDIS_URL!, {
+const redisUrl = new URL(process.env.REDIS_URL || 'redis://localhost:6379/0')
+
+const connection: ConnectionOptions = {
+  host: redisUrl.hostname,
+  port: redisUrl.port ? Number(redisUrl.port) : 6379,
+  username: redisUrl.username ? decodeURIComponent(redisUrl.username) : undefined,
+  password: redisUrl.password ? decodeURIComponent(redisUrl.password) : undefined,
+  db: redisUrl.pathname && redisUrl.pathname !== '/' ? Number(redisUrl.pathname.slice(1)) || 0 : 0,
   maxRetriesPerRequest: null,
-})
+}
 
 // ============================================
 // FILAS
