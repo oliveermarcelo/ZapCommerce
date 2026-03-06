@@ -30,6 +30,7 @@ export interface Tenant {
   logoUrl?: string
   primaryColor: string
   whatsappConnected: boolean
+  whatsappNumber?: string
   plan: string
   status: string
 }
