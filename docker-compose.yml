@@ -1,0 +1,94 @@
+version: '3.8'
+
+services:
+  # ============================================
+  # PostgreSQL 16
+  # ============================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: zapcommerce-db
+    restart: unless-stopped
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_DB: zapcommerce
+      POSTGRES_USER: zapcommerce
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-zapcommerce_dev_2024}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U zapcommerce']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # Redis 7 - Cache, sessões WhatsApp, filas BullMQ
+  # ============================================
+  redis:
+    image: redis:7-alpine
+    container_name: zapcommerce-redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-zapcommerce_redis_2024}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', '-a', '${REDIS_PASSWORD:-zapcommerce_redis_2024}', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # Evolution API v2 - WhatsApp Business
+  # ============================================
+  evolution-api:
+    image: atendai/evolution-api:latest
+    container_name: zapcommerce-evolution
+    restart: unless-stopped
+    ports:
+      - '8080:8080'
+    environment:
+      - SERVER_URL=${EVOLUTION_SERVER_URL:-http://localhost:8080}
+      - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY:-zapcommerce_evo_key_2024}
+      - DATABASE_ENABLED=true
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=postgresql://zapcommerce:${DB_PASSWORD:-zapcommerce_dev_2024}@postgres:5432/evolution
+      - DATABASE_CONNECTION_CLIENT_NAME=evolution
+      - REDIS_ENABLED=true
+      - REDIS_URI=redis://:${REDIS_PASSWORD:-zapcommerce_redis_2024}@redis:6379/1
+      - WEBSOCKET_ENABLED=true
+      - LOG_LEVEL=WARN
+    volumes:
+      - evolution_instances:/evolution/instances
+      - evolution_store:/evolution/store
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ============================================
+  # MinIO - Storage S3-compatível (imagens produtos)
+  # ============================================
+  minio:
+    image: minio/minio:latest
+    container_name: zapcommerce-minio
+    restart: unless-stopped
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    environment:
+      MINIO_ROOT_USER: ${MINIO_USER:-zapcommerce}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:-zapcommerce_minio_2024}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+
+volumes:
+  postgres_data:
+  redis_data:
+  evolution_instances:
+  evolution_store:
+  minio_data:

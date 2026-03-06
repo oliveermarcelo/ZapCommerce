@@ -1,0 +1,740 @@
+// ============================================
+// ZapCommerce - Prisma Schema
+// SaaS de Pedidos via WhatsApp Multi-Segmento
+// Stack: Next.js + Tailwind + ShadCN + Prisma
+// ============================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum TenantPlan {
+  FREE
+  BASIC
+  PRO
+  PREMIUM
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  TRIAL
+  CANCELLED
+}
+
+enum BusinessType {
+  RESTAURANT
+  GAS_WATER
+  PHARMACY
+  PET_SHOP
+  CONVENIENCE
+  CLOTHING
+  CONSTRUCTION
+  BAKERY
+  MARKET
+  SERVICES
+  GENERIC
+}
+
+enum OptionGroupType {
+  SINGLE
+  MULTIPLE
+}
+
+enum OrderStatus {
+  AWAITING_PAYMENT
+  RECEIVED
+  PREPARING
+  READY
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+  EXPIRED
+}
+
+enum PaymentMethod {
+  PIX
+  ON_DELIVERY_CASH
+  ON_DELIVERY_CARD
+}
+
+enum PaymentStatus {
+  PENDING
+  CONFIRMED
+  REFUNDED
+  EXPIRED
+}
+
+enum DeliveryType {
+  DELIVERY
+  PICKUP
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  SENT
+  CANCELLED
+}
+
+enum CampaignAudience {
+  ALL
+  RECURRENT
+  INACTIVE
+  NEW
+  CUSTOM
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  OWNER
+  MANAGER
+  ATTENDANT
+}
+
+// ============================================
+// TENANT (Estabelecimento)
+// ============================================
+
+model Tenant {
+  id                 String       @id @default(cuid())
+  name               String
+  slug               String       @unique
+  businessType       BusinessType @default(GENERIC)
+  document           String?      // CNPJ ou CPF
+  email              String
+  phone              String
+
+  // Plano
+  plan               TenantPlan   @default(FREE)
+  status             TenantStatus @default(TRIAL)
+  trialEndsAt        DateTime?
+
+  // Branding
+  logoUrl            String?
+  bannerUrl          String?
+  primaryColor       String       @default("#25D366")
+
+  // WhatsApp Provider Config
+  whatsappProvider   String       @default("evolution") // "evolution" | "meta_cloud"
+  whatsappNumber     String?
+  whatsappConnected  Boolean      @default(false)
+
+  // Evolution API
+  evolutionInstance  String?
+
+  // Meta Cloud API (API Oficial)
+  metaPhoneNumberId  String?      // Phone Number ID do Meta Business
+  metaWabaId         String?      // WhatsApp Business Account ID
+  metaAccessToken    String?      // Token permanente (encriptar em produção!)
+  metaAppId          String?      // Meta App ID
+
+  // Financeiro SaaS
+  platformFeePercent Float        @default(5.0)
+  paymentGateway     String       @default("asaas") // "asaas" | "mercadopago"
+  gatewaySubAccountId String?     // ID genérico da subconta
+
+  // Asaas
+  asaasWalletId      String?      // walletId da subconta Asaas
+  asaasApiKey         String?     // API key da subconta (se necessário)
+
+  // Mercado Pago
+  mpUserId           String?      // user_id do seller no MP
+  mpAccessToken      String?      // OAuth access_token do seller
+  mpRefreshToken     String?      // OAuth refresh_token
+  mpTokenExpiresAt   DateTime?    // Expiração do token
+
+  // Endereço do estabelecimento
+  address            String?
+  addressNumber      String?
+  neighborhood       String?
+  city               String?
+  state              String?
+  zipCode            String?
+  latitude           Float?
+  longitude          Float?
+
+  // Relações
+  settings           TenantSettings?
+  users              TenantUser[]
+  categories         Category[]
+  products           Product[]
+  optionGroups       OptionGroup[]
+  customers          Customer[]
+  orders             Order[]
+  campaigns          Campaign[]
+  kanbanColumns      KanbanColumn[]
+  webhookLogs        WebhookLog[]
+  monthlyInvoices    MonthlyInvoice[]
+
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  @@index([slug])
+  @@index([status])
+  @@index([businessType])
+}
+
+// ============================================
+// CONFIGURAÇÕES DO TENANT
+// ============================================
+
+model TenantSettings {
+  id                   String   @id @default(cuid())
+  tenantId             String   @unique
+  tenant               Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // Horário: { "mon": {"open":"08:00","close":"22:00"}, "tue": {...}, ... }
+  businessHours        Json?
+
+  // Entrega
+  deliveryEnabled      Boolean  @default(true)
+  pickupEnabled        Boolean  @default(true)
+  deliveryFee          Float    @default(0)
+  deliveryFeePerKm     Float?
+  maxDeliveryRadiusKm  Float?
+  estimatedDeliveryMin Int?
+
+  // Pedidos
+  minimumOrderValue    Float    @default(0)
+  autoAcceptOnPayment  Boolean  @default(true)
+  pixExpirationMinutes Int      @default(15)
+  autoMoveToReady      Boolean  @default(false)
+  autoMoveMinutes      Int?     // Minutos p/ mover automaticamente
+
+  // Recorrência (gás, água, etc.)
+  recurrenceEnabled    Boolean  @default(false)
+  recurrenceDays       Int      @default(30)
+
+  // Mensagens personalizáveis
+  welcomeMessage       String   @default("Olá! Bem-vindo ao nosso estabelecimento. O que deseja pedir?")
+  closedMessage        String   @default("Estamos fechados no momento. Nosso horário de funcionamento é:")
+  orderConfirmMessage  String   @default("✅ Pedido confirmado! Estamos preparando.")
+  outForDeliveryMsg    String   @default("🛵 Seu pedido saiu para entrega!")
+  completedMessage     String   @default("✅ Pedido entregue! Obrigado pela preferência.")
+  pixMessage           String   @default("Escaneie o QR Code abaixo para pagar via PIX:")
+  expiredMessage       String   @default("⏰ Seu pagamento expirou. Deseja fazer um novo pedido?")
+
+  // Notificações lojista
+  notifySoundEnabled   Boolean  @default(true)
+  notifyPushEnabled    Boolean  @default(true)
+  notifyEmail          Boolean  @default(false)
+
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+// ============================================
+// KANBAN CUSTOMIZÁVEL
+// ============================================
+
+model KanbanColumn {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  name        String   // Nome exibido (ex: "Recebido", "Preparando")
+  slug        String   // Identificador (ex: "received", "preparing")
+  color       String   @default("#3B82F6")
+  icon        String?  // Ícone (ex: "clock", "flame", "truck")
+  position    Int      // Ordem de exibição
+  isDefault   Boolean  @default(false) // Coluna padrão p/ novos pedidos
+  isFinal     Boolean  @default(false) // Coluna final (entregue)
+
+  // Status do sistema mapeado
+  mappedStatus OrderStatus?
+
+  // Mensagem automática ao mover p/ esta coluna
+  autoMessage  String?
+
+  orders      Order[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([tenantId, slug])
+  @@index([tenantId, position])
+}
+
+// ============================================
+// USUÁRIOS
+// ============================================
+
+model User {
+  id           String       @id @default(cuid())
+  email        String       @unique
+  passwordHash String
+  name         String
+  phone        String?
+  avatarUrl    String?
+  isSuperAdmin Boolean      @default(false)
+  isActive     Boolean      @default(true)
+
+  tenants      TenantUser[]
+  sessions     Session[]
+
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+}
+
+model TenantUser {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  role      UserRole @default(OWNER)
+  isActive  Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, tenantId])
+  @@index([tenantId])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+
+  createdAt DateTime @default(now())
+
+  @@index([token])
+  @@index([expiresAt])
+}
+
+// ============================================
+// CATÁLOGO - GENÉRICO MULTI-SEGMENTO
+// ============================================
+
+model Category {
+  id          String    @id @default(cuid())
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  name        String
+  slug        String
+  description String?
+  imageUrl    String?
+  position    Int       @default(0)
+  isActive    Boolean   @default(true)
+
+  // Disponibilidade por horário (ex: "Almoço" só aparece 11h-15h)
+  availableFrom String? // "11:00"
+  availableTo   String? // "15:00"
+  availableDays Json?   // ["mon","tue","wed","thu","fri"]
+
+  products    Product[]
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([tenantId, slug])
+  @@index([tenantId, isActive, position])
+}
+
+model Product {
+  id              String    @id @default(cuid())
+  tenantId        String
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  categoryId      String
+  category        Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  name            String
+  slug            String
+  description     String?
+  imageUrl        String?
+  price           Float
+  promotionalPrice Float?   // Preço promocional
+  position        Int       @default(0)
+  isActive        Boolean   @default(true)
+
+  // Estoque (opcional - útil p/ gás, produtos físicos)
+  stockEnabled    Boolean   @default(false)
+  stockQuantity   Int?
+
+  // Tempo de preparo em minutos (opcional)
+  preparationTime Int?
+
+  // Campos customizáveis (JSON livre p/ cada segmento)
+  // Ex farmácia: { "requiresPrescription": true }
+  // Ex roupa: { "material": "algodão" }
+  customFields    Json?
+
+  // Disponibilidade
+  availableFrom   String?
+  availableTo     String?
+  availableDays   Json?
+
+  // Relações
+  optionGroups    ProductOptionGroup[]
+  orderItems      OrderItem[]
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([tenantId, slug])
+  @@index([tenantId, categoryId, isActive])
+  @@index([tenantId, isActive, position])
+}
+
+// ============================================
+// OPÇÕES DINÂMICAS (Variações / Adicionais)
+// ============================================
+
+model OptionGroup {
+  id          String          @id @default(cuid())
+  tenantId    String
+  tenant      Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  name        String          // "Tamanho", "Adicionais", "Sabor", "Com vasilhame?"
+  type        OptionGroupType @default(SINGLE)
+  isRequired  Boolean         @default(false)
+  minSelect   Int             @default(0)   // Mínimo de seleções (MULTIPLE)
+  maxSelect   Int             @default(1)   // Máximo de seleções (MULTIPLE)
+  position    Int             @default(0)
+
+  options     Option[]
+  products    ProductOptionGroup[]
+
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([tenantId])
+}
+
+model Option {
+  id            String      @id @default(cuid())
+  optionGroupId String
+  optionGroup   OptionGroup @relation(fields: [optionGroupId], references: [id], onDelete: Cascade)
+
+  name          String      // "Grande", "Bacon extra", "Com troca vasilhame"
+  price         Float       @default(0) // Preço adicional (0 = sem custo extra)
+  position      Int         @default(0)
+  isActive      Boolean     @default(true)
+  isDefault     Boolean     @default(false) // Pré-selecionado
+
+  orderItemOptions OrderItemOption[]
+
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([optionGroupId, isActive])
+}
+
+// Tabela pivô: quais grupos de opção pertencem a quais produtos
+model ProductOptionGroup {
+  id            String      @id @default(cuid())
+  productId     String
+  product       Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  optionGroupId String
+  optionGroup   OptionGroup @relation(fields: [optionGroupId], references: [id], onDelete: Cascade)
+  position      Int         @default(0)
+
+  @@unique([productId, optionGroupId])
+  @@index([productId])
+}
+
+// ============================================
+// CLIENTES (via WhatsApp)
+// ============================================
+
+model Customer {
+  id              String    @id @default(cuid())
+  tenantId        String
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  whatsappNumber  String    // Número do cliente
+  name            String?
+  pushName        String?   // Nome do WhatsApp
+
+  // Endereço padrão
+  address         String?
+  addressNumber   String?
+  complement      String?
+  neighborhood    String?
+  city            String?
+  reference       String?   // Ponto de referência
+
+  // Métricas
+  totalOrders     Int       @default(0)
+  totalSpent      Float     @default(0)
+  lastOrderAt     DateTime?
+
+  // Recorrência
+  recurrenceActive Boolean  @default(false)
+  recurrenceNextAt DateTime?
+
+  // Tags para segmentação
+  tags            String[]  @default([])
+
+  orders          Order[]
+  chatSessions    ChatSession[]
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([tenantId, whatsappNumber])
+  @@index([tenantId])
+  @@index([tenantId, lastOrderAt])
+}
+
+// ============================================
+// SESSÃO DE CONVERSA (WhatsApp Bot)
+// ============================================
+
+model ChatSession {
+  id          String    @id @default(cuid())
+  customerId  String
+  customer    Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  // Estado da máquina de conversação
+  // Ex: "GREETING", "CHOOSING_CATEGORY", "CHOOSING_PRODUCT",
+  //     "CHOOSING_OPTIONS", "CART_REVIEW", "ASKING_ADDRESS",
+  //     "CHOOSING_PAYMENT", "AWAITING_PAYMENT", "COMPLETED"
+  currentState String   @default("GREETING")
+
+  // Dados temporários da sessão (carrinho em construção, etc.)
+  sessionData  Json     @default("{}")
+
+  // Controle de expiração
+  expiresAt    DateTime
+  isActive     Boolean  @default(true)
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([customerId, isActive])
+  @@index([expiresAt])
+}
+
+// ============================================
+// PEDIDOS
+// ============================================
+
+model Order {
+  id              String        @id @default(cuid())
+  tenantId        String
+  tenant          Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customerId      String
+  customer        Customer      @relation(fields: [customerId], references: [id])
+
+  // Número sequencial por tenant (ex: #001, #002)
+  orderNumber     Int
+  displayNumber   String        // "#001"
+
+  // Status
+  status          OrderStatus   @default(AWAITING_PAYMENT)
+  kanbanColumnId  String?
+  kanbanColumn    KanbanColumn? @relation(fields: [kanbanColumnId], references: [id])
+
+  // Itens
+  items           OrderItem[]
+  subtotal        Float
+  deliveryFee     Float         @default(0)
+  discount        Float         @default(0)
+  total           Float
+
+  // Entrega
+  deliveryType    DeliveryType  @default(DELIVERY)
+  deliveryAddress String?
+  deliveryNumber  String?
+  deliveryComplement String?
+  deliveryNeighborhood String?
+  deliveryReference String?
+  estimatedMinutes Int?
+
+  // Pagamento
+  paymentMethod   PaymentMethod @default(PIX)
+  paymentStatus   PaymentStatus @default(PENDING)
+  paymentId       String?       // ID transação no gateway
+  pixQrCode       String?       // QR Code base64
+  pixCopyPaste    String?       // Código copia-e-cola
+  pixExpiresAt    DateTime?
+  paidAt          DateTime?
+
+  // Split financeiro
+  platformFee     Float         @default(0)  // Valor retido pelo SaaS
+  tenantReceives  Float         @default(0)  // Valor que o lojista recebe
+
+  // Observações do cliente
+  notes           String?
+
+  // Timestamps de cada etapa
+  receivedAt      DateTime?
+  preparingAt     DateTime?
+  readyAt         DateTime?
+  outForDeliveryAt DateTime?
+  deliveredAt     DateTime?
+  cancelledAt     DateTime?
+  cancelReason    String?
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([tenantId, orderNumber])
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
+  @@index([customerId])
+  @@index([paymentStatus])
+  @@index([pixExpiresAt])
+}
+
+model OrderItem {
+  id            String            @id @default(cuid())
+  orderId       String
+  order         Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId     String
+  product       Product           @relation(fields: [productId], references: [id])
+
+  productName   String            // Snapshot do nome na hora do pedido
+  quantity      Int               @default(1)
+  unitPrice     Float             // Preço unitário na hora do pedido
+  totalPrice    Float             // unitPrice * quantity + opções
+
+  options       OrderItemOption[]
+  notes         String?           // Observação do item
+
+  createdAt     DateTime          @default(now())
+}
+
+model OrderItemOption {
+  id          String    @id @default(cuid())
+  orderItemId String
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  optionId    String
+  option      Option    @relation(fields: [optionId], references: [id])
+
+  optionName  String    // Snapshot
+  groupName   String    // Snapshot do grupo
+  price       Float     // Snapshot do preço
+}
+
+// ============================================
+// CAMPANHAS DE MARKETING
+// ============================================
+
+model Campaign {
+  id           String          @id @default(cuid())
+  tenantId     String
+  tenant       Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  name         String
+  message      String          // Texto da mensagem
+  imageUrl     String?         // Imagem anexa (opcional)
+  audience     CampaignAudience @default(ALL)
+  audienceFilter Json?         // Filtros customizados
+
+  status       CampaignStatus  @default(DRAFT)
+  scheduledAt  DateTime?       // Data/hora do disparo
+  sentAt       DateTime?
+  
+  // Métricas
+  totalRecipients Int          @default(0)
+  totalSent       Int          @default(0)
+  totalDelivered  Int          @default(0)
+  totalRead       Int          @default(0)
+
+  // Recorrência (promoção semanal, etc.)
+  isRecurrent    Boolean       @default(false)
+  recurrenceCron String?       // Cron expression (ex: "0 18 * * TUE" = toda terça 18h)
+
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@index([tenantId, status])
+  @@index([scheduledAt])
+}
+
+// ============================================
+// FINANCEIRO
+// ============================================
+
+model MonthlyInvoice {
+  id           String   @id @default(cuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // Período
+  month        Int      // 1-12
+  year         Int
+  
+  // Valores
+  totalOrders  Int      @default(0)
+  totalRevenue Float    @default(0)  // Total dos pedidos
+  totalPixFees Float    @default(0)  // Taxas já retidas automaticamente (PIX)
+  totalPendingFees Float @default(0) // Taxas de pedidos pagos na entrega
+  
+  // Cobrança das taxas pendentes
+  invoicePixCode String?   // QR Code p/ lojista pagar as taxas
+  invoicePaid    Boolean   @default(false)
+  invoicePaidAt  DateTime?
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([tenantId, month, year])
+  @@index([tenantId])
+}
+
+// ============================================
+// LOGS E AUDITORIA
+// ============================================
+
+model WebhookLog {
+  id        String   @id @default(cuid())
+  tenantId  String?
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id])
+
+  source    String   // "evolution", "payment_gateway"
+  event     String   // Tipo do evento
+  payload   Json     // Payload completo
+  processed Boolean  @default(false)
+  error     String?
+
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, source])
+  @@index([createdAt])
+  @@index([processed])
+}
+
+// ============================================
+// TEMPLATES DE NEGÓCIO
+// ============================================
+
+model BusinessTemplate {
+  id           String       @id @default(cuid())
+  businessType BusinessType @unique
+  name         String       // "Lanchonete / Restaurante"
+  description  String
+  icon         String       // Ícone (emoji ou lucide)
+
+  // Template de categorias padrão
+  defaultCategories Json    // [{ "name": "Lanches", "slug": "lanches" }, ...]
+  
+  // Template de colunas Kanban
+  defaultKanbanColumns Json // [{ "name": "Recebido", "slug": "received", "color": "#3B82F6" }, ...]
+  
+  // Configurações recomendadas
+  defaultSettings Json      // { "deliveryEnabled": true, "recurrenceEnabled": false, ... }
+
+  // Dicas de setup
+  setupTips     Json?       // ["Cadastre seus produtos mais vendidos primeiro", ...]
+
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+}

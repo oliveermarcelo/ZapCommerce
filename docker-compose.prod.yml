@@ -1,0 +1,155 @@
+# ============================================
+# Wapify - Docker Compose (Produção)
+# Deploy via Portainer Stack
+# Traefik + Evolution API já existente
+# ============================================
+
+version: '3.8'
+
+services:
+  # ============================================
+  # App Next.js (Painel do Lojista)
+  # lojista.wapify.com.br
+  # ============================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wapify-app
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://${DB_USER:-wapify}:${DB_PASSWORD}@postgres:5432/${DB_NAME:-wapify}?schema=public
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - NEXT_PUBLIC_APP_URL=https://lojista.wapify.com.br
+      - NEXT_PUBLIC_APP_NAME=Wapify
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRES_IN=7d
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+      - JWT_REFRESH_EXPIRES_IN=30d
+      # Evolution API (já rodando no server - mesma rede wapify)
+      - EVOLUTION_API_URL=http://evolution_evolution_api:8080
+      - EVOLUTION_API_KEY=${EVOLUTION_API_KEY}
+      # Meta Cloud API
+      - META_APP_ID=${META_APP_ID:-}
+      - META_APP_SECRET=${META_APP_SECRET:-}
+      - META_WEBHOOK_VERIFY_TOKEN=${META_WEBHOOK_VERIFY_TOKEN:-}
+      # Asaas
+      - ASAAS_API_URL=${ASAAS_API_URL:-https://sandbox.asaas.com/api/v3}
+      - ASAAS_API_KEY=${ASAAS_API_KEY:-}
+      - ASAAS_WALLET_ID=${ASAAS_WALLET_ID:-}
+      - ASAAS_WEBHOOK_SECRET=${ASAAS_WEBHOOK_SECRET:-}
+      # Mercado Pago
+      - MP_APP_ID=${MP_APP_ID:-}
+      - MP_APP_SECRET=${MP_APP_SECRET:-}
+      - MP_ACCESS_TOKEN=${MP_ACCESS_TOKEN:-}
+      - MP_COLLECTOR_ID=${MP_COLLECTOR_ID:-}
+      - MP_REDIRECT_URI=https://lojista.wapify.com.br/api/payment/mercadopago/callback
+      - MP_WEBHOOK_SECRET=${MP_WEBHOOK_SECRET:-}
+      # MinIO (interno)
+      - MINIO_ENDPOINT=minio
+      - MINIO_PORT=9000
+      - MINIO_ACCESS_KEY=${MINIO_USER:-wapify}
+      - MINIO_SECRET_KEY=${MINIO_PASSWORD}
+      - MINIO_BUCKET=wapify
+      - NEXT_PUBLIC_STORAGE_URL=https://cdn.wapify.com.br/wapify
+      # Webhooks
+      - WEBHOOK_BASE_URL=https://lojista.wapify.com.br/api/webhooks
+      # SaaS
+      - PLATFORM_FEE_DEFAULT=5.0
+      - TRIAL_DAYS=14
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - wapify
+      - wapify-internal
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.wapify-app.rule=Host(`lojista.wapify.com.br`)"
+      - "traefik.http.routers.wapify-app.entrypoints=websecure"
+      - "traefik.http.routers.wapify-app.tls=true"
+      - "traefik.http.routers.wapify-app.tls.certresolver=letsencryptresolver"
+      - "traefik.http.services.wapify-app.loadbalancer.server.port=3000"
+
+  # ============================================
+  # PostgreSQL 16 (apenas rede interna)
+  # ============================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: wapify-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-wapify}
+      POSTGRES_USER: ${DB_USER:-wapify}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - wapify_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER:-wapify}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - wapify-internal
+
+  # ============================================
+  # Redis 7 (apenas rede interna)
+  # ============================================
+  redis:
+    image: redis:7-alpine
+    container_name: wapify-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - wapify_redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', '-a', '${REDIS_PASSWORD}', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - wapify-internal
+
+  # ============================================
+  # MinIO (Storage - imagens dos produtos)
+  # cdn.wapify.com.br
+  # ============================================
+  minio:
+    image: minio/minio:latest
+    container_name: wapify-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_USER:-wapify}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD}
+    command: server /data --console-address ":9001"
+    volumes:
+      - wapify_minio_data:/data
+    networks:
+      - wapify
+      - wapify-internal
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.wapify-cdn.rule=Host(`cdn.wapify.com.br`)"
+      - "traefik.http.routers.wapify-cdn.entrypoints=websecure"
+      - "traefik.http.routers.wapify-cdn.tls=true"
+      - "traefik.http.routers.wapify-cdn.tls.certresolver=letsencryptresolver"
+      - "traefik.http.services.wapify-cdn.loadbalancer.server.port=9000"
+
+volumes:
+  wapify_postgres_data:
+    driver: local
+  wapify_redis_data:
+    driver: local
+  wapify_minio_data:
+    driver: local
+
+networks:
+  # Rede do Traefik (já existe - Evolution API tá aqui)
+  wapify:
+    external: true
+  # Rede interna (Postgres + Redis isolados)
+  wapify-internal:
+    driver: bridge
