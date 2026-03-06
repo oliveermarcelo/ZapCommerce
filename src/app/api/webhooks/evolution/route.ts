@@ -100,7 +100,6 @@ export async function POST(req: NextRequest) {
         if (senderNumber && messageText) {
           await handleIncomingMessage(
             tenant.id,
-            instanceName,
             senderNumber,
             messageText,
             messageType,
