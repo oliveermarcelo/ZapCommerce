@@ -32,21 +32,34 @@ const VALID_ORDER_STATUS = new Set<OrderStatus>([
   'EXPIRED',
 ])
 
-const ALLOWED_SETTINGS_KEYS = [
-  'businessHours',
+type TenantSettingsData = Omit<
+  Prisma.TenantSettingsUncheckedCreateInput,
+  'tenantId' | 'id' | 'createdAt' | 'updatedAt'
+>
+
+const BOOLEAN_SETTINGS_KEYS: Array<keyof TenantSettingsData> = [
   'deliveryEnabled',
   'pickupEnabled',
+  'autoAcceptOnPayment',
+  'autoMoveToReady',
+  'recurrenceEnabled',
+  'notifySoundEnabled',
+  'notifyPushEnabled',
+  'notifyEmail',
+]
+
+const NUMBER_SETTINGS_KEYS: Array<keyof TenantSettingsData> = [
   'deliveryFee',
   'deliveryFeePerKm',
   'maxDeliveryRadiusKm',
   'estimatedDeliveryMin',
   'minimumOrderValue',
-  'autoAcceptOnPayment',
   'pixExpirationMinutes',
-  'autoMoveToReady',
   'autoMoveMinutes',
-  'recurrenceEnabled',
   'recurrenceDays',
+]
+
+const STRING_SETTINGS_KEYS: Array<keyof TenantSettingsData> = [
   'welcomeMessage',
   'closedMessage',
   'orderConfirmMessage',
@@ -54,12 +67,7 @@ const ALLOWED_SETTINGS_KEYS = [
   'completedMessage',
   'pixMessage',
   'expiredMessage',
-  'notifySoundEnabled',
-  'notifyPushEnabled',
-  'notifyEmail',
-] as const
-
-type AllowedSettingsKey = (typeof ALLOWED_SETTINGS_KEYS)[number]
+]
 
 function ensureUniqueSlug(base: string, used: Set<string>, fallback: string) {
   const normalizedBase = base || fallback
@@ -75,18 +83,39 @@ function ensureUniqueSlug(base: string, used: Set<string>, fallback: string) {
   return slug
 }
 
-function sanitizeTemplateSettings(raw: unknown): Partial<Record<AllowedSettingsKey, unknown>> {
+function sanitizeTemplateSettings(raw: unknown): TenantSettingsData {
+  const output: TenantSettingsData = {}
+
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    return {}
+    return output
   }
 
   const source = raw as Record<string, unknown>
-  const output: Partial<Record<AllowedSettingsKey, unknown>> = {}
 
-  for (const key of ALLOWED_SETTINGS_KEYS) {
-    if (source[key] !== undefined) {
-      output[key] = source[key]
+  for (const key of BOOLEAN_SETTINGS_KEYS) {
+    const value = source[key as string]
+    if (typeof value === 'boolean') {
+      ;(output as Record<string, unknown>)[key as string] = value
     }
+  }
+
+  for (const key of NUMBER_SETTINGS_KEYS) {
+    const value = source[key as string]
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      ;(output as Record<string, unknown>)[key as string] = value
+    }
+  }
+
+  for (const key of STRING_SETTINGS_KEYS) {
+    const value = source[key as string]
+    if (typeof value === 'string') {
+      ;(output as Record<string, unknown>)[key as string] = value
+    }
+  }
+
+  const businessHours = source.businessHours
+  if (businessHours !== undefined && businessHours !== null && typeof businessHours === 'object') {
+    output.businessHours = businessHours as Prisma.InputJsonValue
   }
 
   return output
